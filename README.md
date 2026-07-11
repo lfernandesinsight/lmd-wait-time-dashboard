@@ -58,7 +58,7 @@ lmd-dashboard/
 - [x] **Sprint 1** — ETL (Python/pandas) lendo a planilha local e carregando no Postgres
 - [x] **Sprint 2** — Containerização completa via Docker Compose (ETL + Postgres)
 - [ ] **Sprint 3** — Dashboard de KPIs no Grafana (tempo médio de espera, volume por período, por consulado)
-- [ ] **Sprint 4** — Analytics avançado (tendências, previsão de tempo de espera, outliers)
+- [ ] **Sprint 4** — Analytics avançado (tendências, previsão de tempo de espera, outliers, soft delete de registros removidos da planilha)
 - [ ] **Sprint 5** — Deploy público no Grafana Cloud
 
 ## 🚀 Como rodar
@@ -107,6 +107,18 @@ cp .env.example .env
 python3 etl/main.py --dry-run --xlsx-path "data/Cidadania espanhola SP.xlsx"   # valida sem gravar
 python3 etl/main.py --xlsx-path "data/Cidadania espanhola SP.xlsx"              # grava no Postgres
 ```
+
+## 🔄 Atualizando os dados
+
+Quando a planilha de origem for atualizada, basta substituir o arquivo em `data/` e rodar o ETL de novo:
+
+```bash
+docker compose run --rm etl
+```
+
+A carga é um **upsert** idempotente (chave: hash da linha): registros novos são inseridos, registros existentes que mudaram (ex: status atualizado) são atualizados, e rodar múltiplas vezes com os mesmos dados não duplica nada.
+
+> **Limitação atual:** linhas removidas da planilha de origem não são removidas do banco — o pipeline hoje só faz insert/update, nunca delete. Uma estratégia de *soft delete* (marcar como removido em vez de apagar, comparando os `row_hash` entre cargas) está planejada para o Sprint 4.
 
 ## 🔒 Privacidade dos dados
 
