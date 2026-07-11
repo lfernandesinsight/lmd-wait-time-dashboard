@@ -42,11 +42,13 @@ lmd-dashboard/
 │   ├── extract.py      # leitura da planilha (localiza header dinamicamente)
 │   ├── transform.py     # limpeza, normalização e cálculo de tempo de espera
 │   ├── load.py           # upsert idempotente no Postgres
-│   └── main.py            # orquestra o pipeline (CLI)
+│   ├── main.py            # orquestra o pipeline (CLI)
+│   └── Dockerfile          # imagem do serviço ETL
 ├── sql/
 │   └── schema.sql          # DDL da tabela principal
 ├── data/                     # dados locais (ignorado no git — ver Privacidade)
-├── docker-compose.yml
+├── docker-compose.yml        # orquestra Postgres + ETL
+├── .dockerignore
 ├── requirements.txt
 └── .env.example
 ```
@@ -54,30 +56,56 @@ lmd-dashboard/
 ## 🗺️ Roadmap (Sprints)
 
 - [x] **Sprint 1** — ETL (Python/pandas) lendo a planilha local e carregando no Postgres
-- [ ] **Sprint 2** — Containerização completa via Docker Compose (ETL + Postgres)
+- [x] **Sprint 2** — Containerização completa via Docker Compose (ETL + Postgres)
 - [ ] **Sprint 3** — Dashboard de KPIs no Grafana (tempo médio de espera, volume por período, por consulado)
 - [ ] **Sprint 4** — Analytics avançado (tendências, previsão de tempo de espera, outliers)
 - [ ] **Sprint 5** — Deploy público no Grafana Cloud
 
-## 🚀 Como rodar (Sprint 1)
+## 🚀 Como rodar
 
 ```bash
 git clone https://github.com/lfernandesinsight/lmd-wait-time-dashboard.git
 cd lmd-wait-time-dashboard
+```
 
+Coloque a planilha de origem em `data/` antes de seguir (veja [Privacidade dos dados](#-privacidade-dos-dados) — o arquivo não vem versionado no repositório).
+
+### Opção A — Docker (recomendado)
+
+Sobe o Postgres e roda o ETL automaticamente, sem precisar instalar Python nem nada localmente.
+
+```bash
+docker compose up --build
+```
+
+Isso builda a imagem do ETL, sobe um Postgres isolado (porta `5434` no host, pra não colidir com outros bancos que você já tenha rodando) e executa o pipeline completo assim que o banco estiver saudável.
+
+Pra rodar o ETL de novo depois (ex: planilha atualizada), sem rebuildar a imagem:
+```bash
+docker compose run --rm etl
+```
+
+Pra conferir os dados carregados:
+```bash
+docker exec -it lmd_postgres psql -U lmd_user -d lmd_dashboard -c "SELECT situacao, COUNT(*) FROM expedientes GROUP BY situacao;"
+```
+
+### Opção B — Ambiente local (Python + venv)
+
+Útil para desenvolvimento/debug do ETL, ou se preferir usar um Postgres que você já tenha rodando.
+
+```bash
 # ambiente virtual
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# banco de dados
+# configurar conexão com o Postgres (ajuste host/porta/usuário conforme seu ambiente)
 cp .env.example .env
-docker compose up -d
 
 # rodar o ETL
-cd etl
-python main.py --dry-run --xlsx-path ../data/Cidadania_espanhola_SP.xlsx   # valida sem gravar
-python main.py --xlsx-path ../data/Cidadania_espanhola_SP.xlsx              # grava no Postgres
+python3 etl/main.py --dry-run --xlsx-path "data/Cidadania espanhola SP.xlsx"   # valida sem gravar
+python3 etl/main.py --xlsx-path "data/Cidadania espanhola SP.xlsx"              # grava no Postgres
 ```
 
 ## 🔒 Privacidade dos dados
