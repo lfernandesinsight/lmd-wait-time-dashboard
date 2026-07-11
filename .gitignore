@@ -1,0 +1,32 @@
+# --- Ambiente Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# --- Variáveis de ambiente / credenciais ---
+.env
+*.env.local
+
+# --- Dados sensíveis (a planilha tem nomes reais de pessoas) ---
+data/*.xlsx
+data/*.csv
+!data/.gitkeep
+
+# --- Postgres / Docker ---
+pgdata/
+*.dump
+
+# --- Grafana (sprints futuros) ---
+grafana-data/
+
+# --- SO / editor ---
+.DS_Store
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# --- Jupyter (se usar notebooks pra explorar os dados) ---
+.ipynb_checkpoints/
