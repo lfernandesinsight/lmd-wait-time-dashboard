@@ -1,22 +1,47 @@
+# Stack autocontida do projeto: Postgres + ETL.
+# Propositalmente NÃO usa o .env local (que aponta pro seu postgres_dev pessoal
+# na porta 5433) — este compose sobe seu próprio Postgres isolado, pra o
+# projeto funcionar sozinho em qualquer máquina, sem depender de containers
+# externos pré-existentes.
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: lmd_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-lmd_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lmd_pass}
-      POSTGRES_DB: ${POSTGRES_DB:-lmd_dashboard}
+      POSTGRES_USER: lmd_user
+      POSTGRES_PASSWORD: lmd_pass
+      POSTGRES_DB: lmd_dashboard
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "5434:5432"   # porta diferente de 5432/5433 pra não colidir com containers que você já tenha
     volumes:
       - lmd_pg_data:/var/lib/postgresql/data
       - ./sql/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lmd_user} -d ${POSTGRES_DB:-lmd_dashboard}"]
+      test: ["CMD-SHELL", "pg_isready -U lmd_user -d lmd_dashboard"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  etl:
+    build:
+      context: .
+      dockerfile: etl/Dockerfile
+    container_name: lmd_etl
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres        # nome do serviço = hostname dentro da rede do compose
+      POSTGRES_PORT: 5432             # porta INTERNA do container (não a 5434 exposta ao host)
+      POSTGRES_USER: lmd_user
+      POSTGRES_PASSWORD: lmd_pass
+      POSTGRES_DB: lmd_dashboard
+      XLSX_PATH: /app/data/Cidadania espanhola SP.xlsx
+      XLSX_SHEET_NAME: Citas Marcadas
+    volumes:
+      - ./data:/app/data:ro   # planilha real fica só no seu disco, nunca vai pra imagem
 
 volumes:
   lmd_pg_data:
