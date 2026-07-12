@@ -46,8 +46,14 @@ lmd-dashboard/
 │   └── Dockerfile          # imagem do serviço ETL
 ├── sql/
 │   └── schema.sql          # DDL da tabela principal
+├── grafana/
+│   ├── provisioning/
+│   │   ├── datasources/postgres.yml   # conecta o Grafana no Postgres automaticamente
+│   │   └── dashboards/dashboards.yml   # registra a pasta de dashboards
+│   └── dashboards/
+│       └── tempo-de-espera.json         # dashboard de KPIs (versionado como código)
 ├── data/                     # dados locais (ignorado no git — ver Privacidade)
-├── docker-compose.yml        # orquestra Postgres + ETL
+├── docker-compose.yml        # orquestra Postgres + ETL + Grafana
 ├── .dockerignore
 ├── requirements.txt
 └── .env.example
@@ -57,7 +63,7 @@ lmd-dashboard/
 
 - [x] **Sprint 1** — ETL (Python/pandas) lendo a planilha local e carregando no Postgres
 - [x] **Sprint 2** — Containerização completa via Docker Compose (ETL + Postgres)
-- [ ] **Sprint 3** — Dashboard de KPIs no Grafana (tempo médio de espera, volume por período, por consulado)
+- [x] **Sprint 3** — Dashboard de KPIs no Grafana (tempo médio de espera, volume por período, por consulado)
 - [ ] **Sprint 4** — Analytics avançado (tendências, previsão de tempo de espera, outliers, soft delete de registros removidos da planilha)
 - [ ] **Sprint 5** — Deploy público no Grafana Cloud
 
@@ -79,6 +85,8 @@ docker compose up --build
 ```
 
 Isso builda a imagem do ETL, sobe um Postgres isolado (porta `5434` no host, pra não colidir com outros bancos que você já tenha rodando) e executa o pipeline completo assim que o banco estiver saudável.
+
+O Grafana sobe junto, já com o datasource e o dashboard de KPIs provisionados automaticamente — acesse em `http://localhost:3001` (usuário `admin`, senha `lmd_admin`).
 
 Pra rodar o ETL de novo depois (ex: planilha atualizada), sem rebuildar a imagem:
 ```bash

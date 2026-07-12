@@ -1,0 +1,18 @@
+apiVersion: 1
+
+datasources:
+  - name: LMD Postgres
+    uid: lmd-postgres-ds
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: lmd_dashboard
+    user: lmd_user
+    isDefault: true
+    editable: true
+    secureJsonData:
+      password: lmd_pass
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false

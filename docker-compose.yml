@@ -43,5 +43,23 @@ services:
     volumes:
       - ./data:/app/data:ro   # planilha real fica só no seu disco, nunca vai pra imagem
 
+  grafana:
+    image: grafana/grafana-oss:11.1.0
+    container_name: lmd_grafana
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3001:3000"   # 3001 pra não colidir com outro Grafana que você já tenha na 3000
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: lmd_admin
+    volumes:
+      - lmd_grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+
 volumes:
   lmd_pg_data:
+  lmd_grafana_data:

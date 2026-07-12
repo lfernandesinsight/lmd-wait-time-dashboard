@@ -1,0 +1,156 @@
+{
+  "uid": "lmd-wait-time",
+  "title": "LMD - Tempo de Espera (Cidadania Espanhola SP)",
+  "tags": ["lmd", "cidadania-espanhola"],
+  "timezone": "browser",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 2,
+  "time": { "from": "now-3y", "to": "now" },
+  "refresh": "",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Tempo médio de espera — Concluídos",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0, "custom": {}, "mappings": [] },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name", "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT AVG(espera_dias_calculado)::numeric(10,0) AS \"Dias\" FROM expedientes WHERE situacao = 'concluido'"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Tempo em aberto (média até hoje) — Aguardando",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0, "custom": {}, "mappings": [] },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name", "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT AVG(espera_dias_calculado)::numeric(10,0) AS \"Dias\" FROM expedientes WHERE situacao = 'aguardando_resultado'"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Total de expedientes",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0, "custom": {}, "mappings": [] },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name", "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS \"Total\" FROM expedientes"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "% Concluídos",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "decimals": 1, "custom": {}, "mappings": [] },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name", "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE situacao = 'concluido') / COUNT(*), 1) AS \"Percentual\" FROM expedientes"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "barchart",
+      "title": "Tempo médio de espera por situação (dias)",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0, "custom": {}, "mappings": [] },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Situação",
+        "legend": { "showLegend": false },
+        "showValue": "always"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT situacao AS \"Situação\", ROUND(AVG(espera_dias_calculado)) AS \"Dias\" FROM expedientes WHERE situacao IN ('concluido', 'aguardando_resultado') GROUP BY situacao ORDER BY 2 DESC"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Volume de solicitações por mês",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0, "custom": { "drawStyle": "bars", "fillOpacity": 60 }, "mappings": [] },
+        "overrides": []
+      },
+      "options": { "legend": { "showLegend": false } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('month', data_solicitacao) AS time, COUNT(*) AS \"Solicitações\" FROM expedientes GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "barchart",
+      "title": "Distribuição por consulado de processamento (top 10)",
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0, "custom": {}, "mappings": [] },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Consulado",
+        "legend": { "showLegend": false },
+        "showValue": "always"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COALESCE(consulado_processamento, 'não informado') AS \"Consulado\", COUNT(*) AS \"Total\" FROM expedientes GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
+        }
+      ]
+    }
+  ]
+}
