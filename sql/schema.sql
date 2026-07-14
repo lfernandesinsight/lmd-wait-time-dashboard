@@ -35,9 +35,20 @@ CREATE TABLE IF NOT EXISTS expedientes (
 
     fonte                   TEXT NOT NULL DEFAULT 'local_xlsx',
     carga_em                TIMESTAMP NOT NULL DEFAULT now(),
-    atualizado_em           TIMESTAMP NOT NULL DEFAULT now()
+    atualizado_em           TIMESTAMP NOT NULL DEFAULT now(),
+
+    -- Soft delete: preenchido quando a linha desaparece da planilha de origem
+    -- numa carga posterior. NULL = ativo/atual. Nunca apagamos a linha de fato,
+    -- pra preservar histórico (ex: entrada duplicada removida pelos mantenedores).
+    removido_em             TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_expedientes_situacao ON expedientes (situacao);
 CREATE INDEX IF NOT EXISTS idx_expedientes_data_solicitacao ON expedientes (data_solicitacao);
 CREATE INDEX IF NOT EXISTS idx_expedientes_consulado ON expedientes (consulado_processamento);
+CREATE INDEX IF NOT EXISTS idx_expedientes_removido_em ON expedientes (removido_em);
+
+-- Conveniência: consultas/dashboards devem usar esta view por padrão,
+-- em vez de filtrar "WHERE removido_em IS NULL" toda vez.
+CREATE OR REPLACE VIEW expedientes_ativos AS
+    SELECT * FROM expedientes WHERE removido_em IS NULL;
