@@ -45,7 +45,9 @@ lmd-dashboard/
 │   ├── main.py            # orquestra o pipeline (CLI)
 │   └── Dockerfile          # imagem do serviço ETL
 ├── sql/
-│   └── schema.sql          # DDL da tabela principal
+│   ├── schema.sql          # DDL da tabela principal (inclui soft delete)
+│   └── migrations/
+│       └── 002_soft_delete.sql   # migração p/ bancos criados antes do Sprint 4
 ├── grafana/
 │   ├── provisioning/
 │   │   ├── datasources/postgres.yml   # conecta o Grafana no Postgres automaticamente
@@ -64,7 +66,10 @@ lmd-dashboard/
 - [x] **Sprint 1** — ETL (Python/pandas) lendo a planilha local e carregando no Postgres
 - [x] **Sprint 2** — Containerização completa via Docker Compose (ETL + Postgres)
 - [x] **Sprint 3** — Dashboard de KPIs no Grafana (tempo médio de espera, volume por período, por consulado)
-- [ ] **Sprint 4** — Analytics avançado (tendências, previsão de tempo de espera, outliers, soft delete de registros removidos da planilha)
+- [ ] **Sprint 4** — Analytics avançado
+  - [x] Soft delete de registros removidos da planilha
+  - [ ] Detecção de outliers (espera muito fora do padrão)
+  - [ ] Tendência / previsão de tempo de espera
 - [ ] **Sprint 5** — Deploy público no Grafana Cloud
 
 ## 🚀 Como rodar
@@ -126,7 +131,9 @@ docker compose run --rm etl
 
 A carga é um **upsert** idempotente (chave: hash da linha): registros novos são inseridos, registros existentes que mudaram (ex: status atualizado) são atualizados, e rodar múltiplas vezes com os mesmos dados não duplica nada.
 
-> **Limitação atual:** linhas removidas da planilha de origem não são removidas do banco — o pipeline hoje só faz insert/update, nunca delete. Uma estratégia de *soft delete* (marcar como removido em vez de apagar, comparando os `row_hash` entre cargas) está planejada para o Sprint 4.
+**Soft delete:** se uma linha existia numa carga anterior mas não aparece mais na planilha, ela não é apagada do banco — é marcada com `removido_em = <data/hora>`, preservando o histórico (por exemplo, uma entrada duplicada removida pelos mantenedores da planilha). Se essa linha reaparecer numa carga futura, ela é reativada automaticamente (`removido_em` volta a `NULL`). Para consultas e dashboards, use a view `expedientes_ativos` em vez da tabela `expedientes` diretamente — ela já filtra `removido_em IS NULL`.
+
+> Se você criou o banco antes do Sprint 4 e não quer recriar os containers do zero, aplique a migração manualmente: `docker exec -i <container> psql -U <user> -d lmd_dashboard < sql/migrations/002_soft_delete.sql`. Qualquer mudança de schema no Postgres autocontido do Docker Compose (descartável) exige recriar o volume: `docker compose down -v && docker compose up --build`.
 
 ## 🔒 Privacidade dos dados
 
