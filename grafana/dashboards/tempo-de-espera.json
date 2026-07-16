@@ -5,7 +5,7 @@
   "timezone": "browser",
   "editable": true,
   "schemaVersion": 39,
-  "version": 2,
+  "version": 4,
   "time": { "from": "now-3y", "to": "now" },
   "refresh": "",
   "panels": [
@@ -149,6 +149,124 @@
           "refId": "A",
           "format": "table",
           "rawSql": "SELECT COALESCE(consulado_processamento, 'não informado') AS \"Consulado\", COUNT(*) AS \"Total\" FROM expedientes GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Outliers detectados (espera muito acima do padrão)",
+      "gridPos": { "x": 0, "y": 20, "w": 6, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none", "decimals": 0, "custom": {}, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "red", "value": 1 }
+          ]}
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name", "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE is_outlier) AS \"Outliers\" FROM expedientes_outliers"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Casos outliers — método IQR (espera > Q3 + 1.5×IQR, por situação)",
+      "description": "Expedientes com tempo de espera estatisticamente muito acima do padrão da própria situação (concluído ou aguardando). Método: intervalo interquartil (IQR), mais robusto que média/desvio-padrão para distribuições assimétricas como esta.",
+      "gridPos": { "x": 6, "y": 20, "w": 18, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0, "custom": { "align": "auto" }, "mappings": [] },
+        "overrides": []
+      },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT numero_protocolo AS \"Protocolo\", data_solicitacao AS \"Data Solicitação\", situacao AS \"Situação\", consulado_processamento AS \"Consulado\", parentesco AS \"Parentesco\", espera_dias_calculado AS \"Dias em Espera\", limite_superior AS \"Limite Normal (dias)\" FROM expedientes_outliers WHERE is_outlier = true ORDER BY espera_dias_calculado DESC"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Tendência do tempo de espera — média mensal e média móvel (3 meses), concluídos",
+      "gridPos": { "x": 0, "y": 28, "w": 16, "h": 8 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 0, "custom": { "drawStyle": "line", "lineWidth": 2 }, "mappings": [] },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Média mensal" }, "properties": [
+            { "id": "custom.lineStyle", "value": { "dash": [6, 4], "fill": "dash" } },
+            { "id": "custom.lineWidth", "value": 1 }
+          ]}
+        ]
+      },
+      "options": { "legend": { "showLegend": true, "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('month', data_conclusao) AS time, ROUND(AVG(espera_dias_calculado)) AS \"Média mensal\", ROUND(AVG(AVG(espera_dias_calculado)) OVER (ORDER BY date_trunc('month', data_conclusao) ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)) AS \"Média móvel (3 meses)\" FROM expedientes_ativos WHERE situacao = 'concluido' AND data_conclusao IS NOT NULL GROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Tendência (regressão linear)",
+      "description": "Quanto o tempo de espera dos concluídos vem aumentando (ou diminuindo) por mês, com base em regressão linear sobre a data de solicitação. R² indica a confiabilidade do ajuste (mais perto de 1 = tendência mais consistente).",
+      "gridPos": { "x": 16, "y": 28, "w": 8, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none", "decimals": 0, "custom": {}, "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "red", "value": 1 }
+          ]}
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name", "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT tendencia_dias_por_mes AS \"Dias a mais por mês\" FROM expedientes_tendencia_espera"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Extrapolação linear (se solicitasse hoje) · confiabilidade (R²)",
+      "description": "Projeção obtida extrapolando a reta de regressão até a data de hoje. É uma extrapolação, não uma garantia — tendências reais tendem a não crescer linearmente para sempre. Veja o R² ao lado para avaliar o quanto a reta descreve bem os dados históricos.",
+      "gridPos": { "x": 16, "y": 32, "w": 8, "h": 4 },
+      "datasource": { "type": "postgres", "uid": "lmd-postgres-ds" },
+      "fieldConfig": {
+        "defaults": { "unit": "none", "decimals": 2, "custom": {}, "mappings": [] },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Dias (extrapolação)" }, "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 0 }] },
+          { "matcher": { "id": "byName", "options": "R²" }, "properties": [{ "id": "unit", "value": "none" }, { "id": "decimals", "value": 2 }] }
+        ]
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name", "colorMode": "value", "graphMode": "none", "orientation": "horizontal" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT previsao_dias_se_solicitar_hoje AS \"Dias (extrapolação)\", r2 AS \"R²\" FROM expedientes_tendencia_espera"
         }
       ]
     }

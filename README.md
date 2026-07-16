@@ -45,9 +45,11 @@ lmd-dashboard/
 │   ├── main.py            # orquestra o pipeline (CLI)
 │   └── Dockerfile          # imagem do serviço ETL
 ├── sql/
-│   ├── schema.sql          # DDL da tabela principal (inclui soft delete)
+│   ├── schema.sql          # DDL da tabela principal (soft delete + views de analytics)
 │   └── migrations/
-│       └── 002_soft_delete.sql   # migração p/ bancos criados antes do Sprint 4
+│       ├── 002_soft_delete.sql       # migração p/ bancos criados antes do Sprint 4
+│       ├── 003_outliers_view.sql      # view de detecção de outliers (IQR)
+│       └── 004_tendencia_view.sql      # view de tendência/previsão (regressão linear)
 ├── grafana/
 │   ├── provisioning/
 │   │   ├── datasources/postgres.yml   # conecta o Grafana no Postgres automaticamente
@@ -66,10 +68,10 @@ lmd-dashboard/
 - [x] **Sprint 1** — ETL (Python/pandas) lendo a planilha local e carregando no Postgres
 - [x] **Sprint 2** — Containerização completa via Docker Compose (ETL + Postgres)
 - [x] **Sprint 3** — Dashboard de KPIs no Grafana (tempo médio de espera, volume por período, por consulado)
-- [ ] **Sprint 4** — Analytics avançado
+- [x] **Sprint 4** — Analytics avançado
   - [x] Soft delete de registros removidos da planilha
-  - [ ] Detecção de outliers (espera muito fora do padrão)
-  - [ ] Tendência / previsão de tempo de espera
+  - [x] Detecção de outliers (espera muito fora do padrão)
+  - [x] Tendência / previsão de tempo de espera
 - [ ] **Sprint 5** — Deploy público no Grafana Cloud
 
 ## 🚀 Como rodar
@@ -134,6 +136,16 @@ A carga é um **upsert** idempotente (chave: hash da linha): registros novos sã
 **Soft delete:** se uma linha existia numa carga anterior mas não aparece mais na planilha, ela não é apagada do banco — é marcada com `removido_em = <data/hora>`, preservando o histórico (por exemplo, uma entrada duplicada removida pelos mantenedores da planilha). Se essa linha reaparecer numa carga futura, ela é reativada automaticamente (`removido_em` volta a `NULL`). Para consultas e dashboards, use a view `expedientes_ativos` em vez da tabela `expedientes` diretamente — ela já filtra `removido_em IS NULL`.
 
 > Se você criou o banco antes do Sprint 4 e não quer recriar os containers do zero, aplique a migração manualmente: `docker exec -i <container> psql -U <user> -d lmd_dashboard < sql/migrations/002_soft_delete.sql`. Qualquer mudança de schema no Postgres autocontido do Docker Compose (descartável) exige recriar o volume: `docker compose down -v && docker compose up --build`.
+
+## 📈 Analytics avançado
+
+Duas views adicionais calculam estatísticas diretamente em SQL (funções nativas do Postgres, sem dependência de bibliotecas de ML), recalculadas automaticamente a cada consulta — sempre refletem a carga mais recente, sem precisar reprocessar nada no ETL.
+
+**`expedientes_outliers`** — detecta expedientes com tempo de espera muito acima do padrão da própria situação (concluído ou aguardando), usando o método do intervalo interquartil (IQR: `Q3 + 1.5×IQR`). Mais robusto que média/desvio-padrão para uma distribuição assimétrica como esta, onde a maioria espera meses mas uma cauda longa espera anos.
+
+**`expedientes_tendencia_espera`** — regressão linear simples (via `regr_slope`/`regr_intercept`/`regr_r2` do Postgres) do tempo de espera dos concluídos em função da data de solicitação. Mostra a tendência em dias por mês e uma extrapolação de quanto tempo levaria hoje — sempre acompanhada do R² para indicar o quão confiável é o ajuste. É uma extrapolação linear, não uma garantia: tendências reais tendem a não crescer para sempre no mesmo ritmo.
+
+Migrações correspondentes: `sql/migrations/003_outliers_view.sql` e `sql/migrations/004_tendencia_view.sql`.
 
 ## 🔒 Privacidade dos dados
 
