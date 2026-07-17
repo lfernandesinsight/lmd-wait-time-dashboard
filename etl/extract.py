@@ -1,16 +1,18 @@
 """
 extract.py
-Responsável por ler a planilha local (.xlsx) e devolver um DataFrame "bruto",
-sem nenhuma limpeza ainda. A única responsabilidade aqui é achar corretamente
-a linha de cabeçalho e ler os dados — a planilha tem uma linha em branco antes
-do header e uma coluna oculta (M) no meio, então não dá pra confiar em
-posições fixas de linha.
+Responsável por obter a planilha "bruta" (local ou direto do Google Sheets)
+e devolver um DataFrame, sem nenhuma limpeza ainda. A única responsabilidade
+aqui é achar corretamente a linha de cabeçalho e ler os dados — a planilha
+tem uma linha em branco antes do header e uma coluna oculta (M) no meio,
+então não dá pra confiar em posições fixas de linha.
 """
 
+import io
 import logging
 from pathlib import Path
 
 import pandas as pd
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,45 @@ def extract_local_xlsx(xlsx_path: str, sheet_name=0) -> pd.DataFrame:
 
     logger.info("Extraídas %d linhas brutas (antes da limpeza).", len(df))
     return df
+
+
+def extract_google_sheets(sheet_id: str, gid: str) -> pd.DataFrame:
+    """
+    Baixa a planilha direto do Google Sheets via export CSV público (sem
+    precisar de API key/OAuth, já que a planilha é pública). Usado no modo
+    automático (GitHub Actions), onde não há um arquivo local disponível.
+
+    Baixa o CSV uma única vez e faz as duas leituras (localizar header +
+    ler de fato) em memória, para não duplicar a requisição de rede.
+    """
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
+    logger.info("Baixando planilha do Google Sheets (sheet_id=%s, gid=%s)...", sheet_id, gid)
+
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    csv_text = response.text
+
+    raw = pd.read_csv(io.StringIO(csv_text), header=None, dtype=str)
+    header_row_idx = _find_header_row(raw)
+    logger.info("Header localizado na linha %d (0-indexed)", header_row_idx)
+
+    df = pd.read_csv(io.StringIO(csv_text), header=header_row_idx)
+
+    logger.info("Extraídas %d linhas brutas (antes da limpeza).", len(df))
+    return df
+
+
+def extract(source: str, xlsx_path: str = None, sheet_name=0,
+            google_sheet_id: str = None, google_sheet_gid: str = None) -> pd.DataFrame:
+    """Ponto de entrada único: escolhe local ou Google Sheets conforme `source`."""
+    if source == "local":
+        return extract_local_xlsx(xlsx_path, sheet_name=sheet_name)
+    elif source == "sheets":
+        if not google_sheet_id or not google_sheet_gid:
+            raise ValueError("source='sheets' requer google_sheet_id e google_sheet_gid.")
+        return extract_google_sheets(google_sheet_id, google_sheet_gid)
+    else:
+        raise ValueError(f"source inválido: '{source}' (use 'local' ou 'sheets')")
 
 
 if __name__ == "__main__":
