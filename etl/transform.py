@@ -47,8 +47,7 @@ COLUMN_KEYWORDS = [
 def _map_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Renomeia colunas por palavra-chave (case-insensitive), ignora o resto."""
     rename_map = {}
-    normalized_cols = {col: str(col).replace(
-        "\n", " ").strip().lower() for col in df.columns}
+    normalized_cols = {col: str(col).replace("\n", " ").strip().lower() for col in df.columns}
 
     for keyword, final_name in COLUMN_KEYWORDS:
         match = next(
@@ -58,8 +57,7 @@ def _map_columns(df: pd.DataFrame) -> pd.DataFrame:
         if match is not None:
             rename_map[match] = final_name
         else:
-            logger.warning(
-                "Coluna com palavra-chave '%s' não encontrada na planilha.", keyword)
+            logger.warning("Coluna com palavra-chave '%s' não encontrada na planilha.", keyword)
 
     df = df.rename(columns=rename_map)
     keep_cols = [v for _, v in COLUMN_KEYWORDS if v in df.columns]
@@ -75,12 +73,10 @@ def _parse_br_date(series: pd.Series) -> pd.Series:
     if pd.api.types.is_datetime64_any_dtype(series):
         parsed = series.copy()
     else:
-        parsed = pd.to_datetime(series, format="%d/%m/%Y",
-                                errors="coerce", dayfirst=True)
+        parsed = pd.to_datetime(series, format="%d/%m/%Y", errors="coerce", dayfirst=True)
         still_null = parsed.isna() & series.notna()
         if still_null.any():
-            parsed.loc[still_null] = pd.to_datetime(
-                series[still_null], errors="coerce", dayfirst=True)
+            parsed.loc[still_null] = pd.to_datetime(series[still_null], errors="coerce", dayfirst=True)
 
     parsed = pd.to_datetime(parsed, errors="coerce")
     parsed = parsed.mask(parsed.dt.date == date(1899, 12, 30))
@@ -142,8 +138,7 @@ def _split_consulado(raw: str) -> tuple[str | None, str | None]:
     if not isinstance(raw, str) or not raw.strip():
         return None, None
     raw_clean = raw.strip()
-    # separadores usados na planilha para indicar trâmite
-    parts = re.split(r"->|=|>|-(?!\d)", raw_clean)
+    parts = re.split(r"->|=|>|-(?!\d)", raw_clean)  # separadores usados na planilha para indicar trâmite
     parts = [p.strip() for p in parts if p.strip()]
     destino = parts[-1] if parts else None
     destino_norm = _normalize_consulado_code(destino)
@@ -178,10 +173,28 @@ def _extract_int(raw) -> int | None:
 
 
 def _row_hash(row: pd.Series) -> str:
-    key = "|".join(
-        str(row.get(c, ""))
-        for c in ["nome", "numero_protocolo", "data_solicitacao_raw", "hora_raw", "situacao_raw"]
-    )
+    """
+    Gera uma chave estável para a linha, usada como row_hash no upsert.
+
+    IMPORTANTE: usa os campos JÁ PARSEADOS (data_solicitacao, hora_solicitacao),
+    não os "_raw". Os valores brutos têm representação diferente dependendo da
+    origem — no xlsx local, a data chega como datetime nativo do Excel; no CSV
+    baixado do Google Sheets, chega como texto "28/10/2022". Se o hash usasse o
+    valor bruto, a MESMA linha geraria hashes diferentes conforme a fonte,
+    fazendo o upsert tratar o mesmo expediente como registros duplicados.
+    Os campos já parseados têm sempre o mesmo tipo/formato, não importa a
+    origem dos dados.
+    """
+    data_str = row["data_solicitacao"].strftime("%Y-%m-%d") if pd.notna(row.get("data_solicitacao")) else ""
+    hora_val = row.get("hora_solicitacao")
+    hora_str = hora_val.isoformat() if isinstance(hora_val, time) else ""
+    key = "|".join([
+        str(row.get("nome") or "").strip(),
+        str(row.get("numero_protocolo") or "").strip(),
+        data_str,
+        hora_str,
+        str(row.get("situacao_raw") or "").strip(),
+    ])
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
@@ -191,11 +204,9 @@ def transform(raw_df: pd.DataFrame) -> pd.DataFrame:
 
     # --- Datas ---
     df["data_solicitacao"] = _parse_br_date(df["data_solicitacao_raw"])
-    df["data_entrega_docs_finais"] = _parse_br_date(
-        df.get("data_entrega_docs_raw"))
+    df["data_entrega_docs_finais"] = _parse_br_date(df.get("data_entrega_docs_raw"))
     df["data_conclusao"] = _parse_br_date(df.get("data_conclusao_raw"))
-    df["hora_solicitacao"] = _parse_hora(
-        df["hora_raw"]) if "hora_raw" in df else None
+    df["hora_solicitacao"] = _parse_hora(df["hora_raw"]) if "hora_raw" in df else None
 
     # --- Filtro central: descarta linhas separadoras de mês e linhas "lixo" ---
     before = len(df)
@@ -209,13 +220,10 @@ def transform(raw_df: pd.DataFrame) -> pd.DataFrame:
     df["consulado_processamento"] = consulado_split.apply(lambda t: t[1])
 
     # --- Categóricos ---
-    df["categoria_anexo"] = pd.to_numeric(
-        df.get("categoria_anexo_raw"), errors="coerce").astype("Int64")
-    df["parentesco"] = df.get("parentesco").astype(
-        str).str.strip().str.lower().replace({"nan": None})
+    df["categoria_anexo"] = pd.to_numeric(df.get("categoria_anexo_raw"), errors="coerce").astype("Int64")
+    df["parentesco"] = df.get("parentesco").astype(str).str.strip().str.lower().replace({"nan": None})
     df["situacao"] = df["situacao_raw"].apply(_normalize_situacao)
-    df["retencao_parcial_docs"] = df.get("retencao_parcial_raw").astype(
-        str).str.strip().str.lower().eq("sim")
+    df["retencao_parcial_docs"] = df.get("retencao_parcial_raw").astype(str).str.strip().str.lower().eq("sim")
 
     # --- Espera ---
     df["espera_dias_planilha"] = df["espera_dias_raw"].apply(_extract_int)
@@ -224,8 +232,7 @@ def transform(raw_df: pd.DataFrame) -> pd.DataFrame:
     today = pd.Timestamp(date.today())
     dias_concluido = (df["data_conclusao"] - df["data_solicitacao"]).dt.days
     dias_em_aberto = (today - df["data_solicitacao"]).dt.days
-    df["espera_dias_calculado"] = dias_concluido.where(
-        ~df["em_aberto"], dias_em_aberto)
+    df["espera_dias_calculado"] = dias_concluido.where(~df["em_aberto"], dias_em_aberto)
 
     # --- Identidade da linha (para upsert idempotente) ---
     df["row_hash"] = df.apply(_row_hash, axis=1)
@@ -244,8 +251,7 @@ def transform(raw_df: pd.DataFrame) -> pd.DataFrame:
 
     dupes = df["row_hash"].duplicated().sum()
     if dupes:
-        logger.warning(
-            "%d linhas com row_hash duplicado (possível linha repetida na planilha).", dupes)
+        logger.warning("%d linhas com row_hash duplicado (possível linha repetida na planilha).", dupes)
 
     logger.info("Transform concluído: %d linhas prontas para carga.", len(df))
     return df
