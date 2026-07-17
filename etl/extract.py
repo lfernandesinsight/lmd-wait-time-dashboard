@@ -72,10 +72,33 @@ def extract_google_sheets(sheet_id: str, gid: str) -> pd.DataFrame:
 
     response = requests.get(url, timeout=30)
     response.raise_for_status()
+
+    # O Google nem sempre informa o charset no header HTTP, e sem isso o
+    # `requests` pode assumir Latin-1 por padrão — o que corrompe acentos
+    # (ex: "Situação" vira algo ilegível) e quebra a busca pelo header.
+    # A exportação do Sheets é sempre UTF-8, então forçamos aqui.
+    response.encoding = "utf-8"
     csv_text = response.text
 
+    if "text/csv" not in response.headers.get("Content-Type", "") and "<html" in csv_text[:500].lower():
+        raise ValueError(
+            "A resposta do Google Sheets parece ser uma página HTML, não um CSV. "
+            "Isso costuma acontecer quando a planilha não está compartilhada como "
+            "'Qualquer pessoa com o link pode visualizar', ou o link/gid mudou. "
+            f"Início da resposta recebida: {csv_text[:300]!r}"
+        )
+
     raw = pd.read_csv(io.StringIO(csv_text), header=None, dtype=str)
-    header_row_idx = _find_header_row(raw)
+
+    try:
+        header_row_idx = _find_header_row(raw)
+    except ValueError:
+        preview = csv_text[:500]
+        raise ValueError(
+            f"Não encontrei a linha de cabeçalho no CSV baixado do Google Sheets. "
+            f"Prévia do conteúdo recebido (primeiros 500 caracteres):\n{preview!r}"
+        ) from None
+
     logger.info("Header localizado na linha %d (0-indexed)", header_row_idx)
 
     df = pd.read_csv(io.StringIO(csv_text), header=header_row_idx)
