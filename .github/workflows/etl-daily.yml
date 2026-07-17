@@ -1,16 +1,16 @@
-name: ETL diário — LMD Dashboard
+name: ETL diario - LMD Dashboard
 
 on:
   schedule:
-    # 09:00 UTC = 06:00 em São Paulo (horário padrão, sem considerar DST)
+    # 09:00 UTC = 06:00 em Sao Paulo (horario padrao, sem considerar DST)
     - cron: "0 9 * * *"
-  workflow_dispatch: {}   # permite rodar manualmente pela aba Actions do GitHub
+  workflow_dispatch: {}
 
 jobs:
   run-etl:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout do repositório
+      - name: Checkout do repositorio
         uses: actions/checkout@v4
 
       - name: Configurar Python
@@ -18,10 +18,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Instalar dependências
+      - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      - name: Rodar ETL (fonte: Google Sheets → Neon)
+      - name: Rodar ETL - fonte Google Sheets para Neon
         env:
           DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
         run: python etl/main.py --source sheets
