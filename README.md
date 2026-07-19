@@ -4,7 +4,9 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://www.docker.com/)
 [![Grafana](https://img.shields.io/badge/Grafana-Cloud-F46800.svg)](https://grafana.com/)
-[![Status](https://img.shields.io/badge/status-em%20desenvolvimento-yellow.svg)](#roadmap)
+[![Status](https://img.shields.io/badge/status-em%20produ%C3%A7%C3%A3o-brightgreen.svg)](#roadmap)
+
+**🔗 [Ver o dashboard ao vivo](https://mellowechidna481.grafana.net/public-dashboards/2ccb57810a794c67841c5e112a42a8a3)** — atualizado automaticamente todo dia, sem necessidade de login.
 
 Dashboard público com pipeline de dados completo (ETL → banco relacional → visualização) para analisar tempos de espera em processos de **Cidadania Espanhola pela Lei de Memória Democrática (LMD)**, com base em dados voluntariamente compartilhados pela comunidade de solicitantes.
 
@@ -38,10 +40,13 @@ Também serve como projeto de portfólio, demonstrando um pipeline de dados comp
 
 ```
 lmd-dashboard/
+├── .github/
+│   └── workflows/
+│       └── etl-daily.yml       # roda o ETL automaticamente 1x/dia (Google Sheets → Neon)
 ├── etl/
-│   ├── extract.py      # leitura da planilha (localiza header dinamicamente)
+│   ├── extract.py      # leitura da planilha — local (xlsx) ou Google Sheets público
 │   ├── transform.py     # limpeza, normalização e cálculo de tempo de espera
-│   ├── load.py           # upsert idempotente no Postgres
+│   ├── load.py           # upsert em lote + soft delete no Postgres
 │   ├── main.py            # orquestra o pipeline (CLI)
 │   └── Dockerfile          # imagem do serviço ETL
 ├── sql/
@@ -55,9 +60,10 @@ lmd-dashboard/
 │   │   ├── datasources/postgres.yml   # conecta o Grafana no Postgres automaticamente
 │   │   └── dashboards/dashboards.yml   # registra a pasta de dashboards
 │   └── dashboards/
-│       └── tempo-de-espera.json         # dashboard de KPIs (versionado como código)
+│       ├── tempo-de-espera.json          # dashboard de KPIs (uso local via Docker Compose)
+│       └── tempo-de-espera.cloud.json     # mesma versão, com UID de datasource do Grafana Cloud
 ├── data/                     # dados locais (ignorado no git — ver Privacidade)
-├── docker-compose.yml        # orquestra Postgres + ETL + Grafana
+├── docker-compose.yml        # orquestra Postgres + ETL + Grafana (ambiente local)
 ├── .dockerignore
 ├── requirements.txt
 └── .env.example
@@ -72,7 +78,10 @@ lmd-dashboard/
   - [x] Soft delete de registros removidos da planilha
   - [x] Detecção de outliers (espera muito fora do padrão)
   - [x] Tendência / previsão de tempo de espera
-- [ ] **Sprint 5** — Deploy público no Grafana Cloud
+- [x] **Sprint 5** — Deploy público
+  - [x] Banco migrado para Neon (Postgres gerenciado, free tier)
+  - [x] Automação diária via GitHub Actions (Google Sheets → Neon)
+  - [x] Dashboard publicado no Grafana Cloud
 
 ## 🚀 Como rodar
 
@@ -147,13 +156,35 @@ Duas views adicionais calculam estatísticas diretamente em SQL (funções nativ
 
 Migrações correspondentes: `sql/migrations/003_outliers_view.sql` e `sql/migrations/004_tendencia_view.sql`.
 
+## ☁️ Arquitetura de produção
+
+O dashboard roda publicamente, atualizado automaticamente, sem depender de nenhuma máquina ligada:
+
+```
+Google Sheets (planilha pública)
+        │  1x/dia, via GitHub Actions (workflow_dispatch também disponível sob demanda)
+        ▼
+  ETL (extract → transform → load)
+        │  upsert em lote + soft delete
+        ▼
+  Neon (Postgres gerenciado, free tier)
+        │
+        ▼
+  Grafana Cloud (dashboard público, somente leitura)
+```
+
+- **Fonte de dados**: a planilha colaborativa pública, lida direto via export CSV (sem API key)
+- **Automação**: `.github/workflows/etl-daily.yml`, rodando via GitHub Actions (cron diário + disparo manual). A credencial do banco fica em um secret do repositório (`NEON_DATABASE_URL`), nunca versionada
+- **Banco**: [Neon](https://neon.tech), Postgres gerenciado com scale-to-zero (economiza recursos quando ocioso, sem pausar o projeto como acontece em outras opções de free tier)
+- **Visualização**: Grafana Cloud, com o mesmo dashboard usado localmente (ver `tempo-de-espera.cloud.json`), compartilhado como *Externally shared dashboard* — [link público, somente leitura](https://mellowechidna481.grafana.net/public-dashboards/2ccb57810a794c67841c5e112a42a8a3), revogável a qualquer momento
+
 ## 🔒 Privacidade dos dados
 
 A planilha de origem contém nomes reais de solicitantes compartilhados voluntariamente pela comunidade. Por isso:
 
 - O arquivo `.xlsx` original **não é versionado** neste repositório (veja `.gitignore`)
 - Qualquer dado de exemplo publicado neste repo será anonimizado/sintético
-- O dashboard público (quando publicado no Sprint 5) exibirá apenas agregações estatísticas, nunca dados individuais identificáveis
+- O dashboard público exibe apenas agregações estatísticas (médias, contagens, tendências), nunca dados individuais identificáveis linha a linha
 
 ## 👤 Autor
 
