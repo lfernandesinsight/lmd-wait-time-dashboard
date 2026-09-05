@@ -24,4 +24,5 @@ jobs:
       - name: Rodar ETL - fonte Google Sheets para Neon
         env:
           DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
         run: python etl/main.py --source sheets

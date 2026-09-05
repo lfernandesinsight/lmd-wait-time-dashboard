@@ -7,18 +7,22 @@ tem uma linha em branco antes do header e uma coluna oculta (M) no meio,
 então não dá pra confiar em posições fixas de linha.
 """
 
-import io
+import json
 import logging
+import os
 from pathlib import Path
 
+import gspread
 import pandas as pd
-import requests
+from google.oauth2.service_account import Credentials
 
 logger = logging.getLogger(__name__)
 
 # Palavra-chave que identifica com segurança a linha de cabeçalho real,
 # mesmo que a planilha ganhe/perca linhas em branco no topo no futuro.
 HEADER_KEYWORD = "Situação"
+
+GOOGLE_SHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 
 def _find_header_row(raw: pd.DataFrame, keyword: str = HEADER_KEYWORD, max_scan_rows: int = 10) -> int:
@@ -46,62 +50,77 @@ def extract_local_xlsx(xlsx_path: str, sheet_name=0) -> pd.DataFrame:
 
     logger.info("Lendo %s (sheet=%s)...", path, sheet_name)
 
-    # Primeira leitura sem header, só para localizar a linha correta
     raw = pd.read_excel(path, sheet_name=sheet_name, header=None, dtype=str)
     header_row_idx = _find_header_row(raw)
     logger.info("Header localizado na linha %d (0-indexed)", header_row_idx)
 
-    # Releitura já usando o header correto
     df = pd.read_excel(path, sheet_name=sheet_name, header=header_row_idx)
 
     logger.info("Extraídas %d linhas brutas (antes da limpeza).", len(df))
     return df
 
 
-def extract_google_sheets(sheet_id: str, gid: str) -> pd.DataFrame:
+def _get_gspread_client() -> gspread.Client:
     """
-    Baixa a planilha direto do Google Sheets via export CSV público (sem
-    precisar de API key/OAuth, já que a planilha é pública). Usado no modo
-    automático (GitHub Actions), onde não há um arquivo local disponível.
-
-    Baixa o CSV uma única vez e faz as duas leituras (localizar header +
-    ler de fato) em memória, para não duplicar a requisição de rede.
+    Autentica na Google Sheets API usando uma service account.
+    A credencial vem da variável de ambiente GOOGLE_SHEETS_CREDENTIALS,
+    que deve conter o JSON inteiro da chave (não um caminho de arquivo).
     """
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-    logger.info("Baixando planilha do Google Sheets (sheet_id=%s, gid=%s)...", sheet_id, gid)
-
-    response = requests.get(url, timeout=30)
-    response.raise_for_status()
-
-    # O Google nem sempre informa o charset no header HTTP, e sem isso o
-    # `requests` pode assumir Latin-1 por padrão — o que corrompe acentos
-    # (ex: "Situação" vira algo ilegível) e quebra a busca pelo header.
-    # A exportação do Sheets é sempre UTF-8, então forçamos aqui.
-    response.encoding = "utf-8"
-    csv_text = response.text
-
-    if "text/csv" not in response.headers.get("Content-Type", "") and "<html" in csv_text[:500].lower():
-        raise ValueError(
-            "A resposta do Google Sheets parece ser uma página HTML, não um CSV. "
-            "Isso costuma acontecer quando a planilha não está compartilhada como "
-            "'Qualquer pessoa com o link pode visualizar', ou o link/gid mudou. "
-            f"Início da resposta recebida: {csv_text[:300]!r}"
+    creds_json = os.environ.get("GOOGLE_SHEETS_CREDENTIALS")
+    if not creds_json:
+        raise EnvironmentError(
+            "Variável de ambiente GOOGLE_SHEETS_CREDENTIALS não encontrada. "
+            "Ela deve conter o conteúdo do JSON da service account "
+            "(configure como secret no GitHub Actions ou export local para testes)."
         )
 
-    raw = pd.read_csv(io.StringIO(csv_text), header=None, dtype=str)
+    creds_dict = json.loads(creds_json)
+    creds = Credentials.from_service_account_info(creds_dict, scopes=GOOGLE_SHEETS_SCOPES)
+    return gspread.authorize(creds)
+
+
+def extract_google_sheets(sheet_id: str, gid: str) -> pd.DataFrame:
+    """
+    Lê a planilha via Google Sheets API, autenticado com uma service account
+    (substitui o antigo link público de export CSV, que passou a ser
+    bloqueado pela política de compartilhamento do Workspace).
+    A planilha precisa estar compartilhada com o e-mail da service account.
+    """
+    logger.info("Autenticando com a Google Sheets API (service account)...")
+    client = _get_gspread_client()
+
+    logger.info("Abrindo planilha (sheet_id=%s, gid=%s)...", sheet_id, gid)
+    spreadsheet = client.open_by_key(sheet_id)
+
+    try:
+        worksheet = next(ws for ws in spreadsheet.worksheets() if ws.id == int(gid))
+    except StopIteration:
+        abas_disponiveis = [(ws.title, ws.id) for ws in spreadsheet.worksheets()]
+        raise ValueError(
+            f"Não encontrei nenhuma aba com gid={gid} na planilha {sheet_id}. "
+            f"Abas disponíveis: {abas_disponiveis}"
+        ) from None
+
+    values = worksheet.get_all_values()
+    if not values:
+        raise ValueError("A aba retornou vazia — verifique se a planilha tem dados.")
+
+    raw = pd.DataFrame(values, dtype=str)
 
     try:
         header_row_idx = _find_header_row(raw)
     except ValueError:
-        preview = csv_text[:500]
+        preview = values[:5]
         raise ValueError(
-            f"Não encontrei a linha de cabeçalho no CSV baixado do Google Sheets. "
-            f"Prévia do conteúdo recebido (primeiros 500 caracteres):\n{preview!r}"
+            f"Não encontrei a linha de cabeçalho na planilha do Google Sheets. "
+            f"Prévia das primeiras linhas recebidas: {preview!r}"
         ) from None
 
     logger.info("Header localizado na linha %d (0-indexed)", header_row_idx)
 
-    df = pd.read_csv(io.StringIO(csv_text), header=header_row_idx)
+    header = raw.iloc[header_row_idx]
+    df = raw.iloc[header_row_idx + 1:].reset_index(drop=True)
+    df.columns = header
 
     logger.info("Extraídas %d linhas brutas (antes da limpeza).", len(df))
     return df
