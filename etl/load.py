@@ -75,6 +75,16 @@ def get_engine() -> Engine:
     # string única, mais simples de gerenciar como secret do que 4 variáveis.
     database_url = os.environ.get("DATABASE_URL")
     if database_url:
+        # Força explicitamente o driver psycopg2 (em vez de deixar o
+        # SQLAlchemy escolher o padrão), porque versões mais novas do
+        # SQLAlchemy podem preferir o driver "psycopg" (v3) quando a
+        # string não especifica nenhum — e esse driver não está instalado
+        # (o projeto usa psycopg2-binary). Evita comportamento diferente
+        # entre ambientes (local vs GitHub Actions) por causa da versão
+        # do SQLAlchemy resolvida no pip install de cada um.
+        if database_url.startswith("postgresql://"):
+            database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
         # Neon (e a maioria dos Postgres gerenciados) exige SSL.
         if "sslmode" not in database_url:
             separator = "&" if "?" in database_url else "?"
